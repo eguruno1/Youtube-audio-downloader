@@ -7,18 +7,18 @@ YouTube 동영상에서 오디오만 추출하여 FLAC 고음질 형식으로 �
 
 ### 1단계: Python 설치 확인
 ```bash
-python --version
+python3 --version
 ```
 Python 3.7 이상이 필요합니다.
 
 ### 2단계: 필수 라이브러리 설치
 ```bash
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 또는 개별 설치:
 ```bash
-pip install yt-dlp
+pip3 install yt-dlp
 ```
 
 ### 3단계: FFmpeg 설치 (필수!)
