@@ -66,22 +66,38 @@ def download_task(url):
             'progress_hooks': [progress_hook],
             'noplaylist': True,
             'quiet': True,
+            
+            # YouTube 403 우회 설정
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['ios', 'web'],  # iOS 클라이언트 우선 시도
+                }
+            },
+            'cookiesfrombrowser': None,  # 브라우저 쿠키 사용 안함
+            'nocheckcertificate': True,  # SSL 인증서 검증 생략
         }
         
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get('title', 'Unknown')
             log(f"제목: {title}")
+            log("다운로드 시작...")
             ydl.download([url])
         
         set_status('complete', f'완료: {title}.flac')
+        log(f"저장됨: {DOWNLOAD_PATH}/{title}.flac")
         
     except Exception as e:
         error = str(e)
         if 'rate-limited' in error.lower():
-            set_status('error', 'YouTube 제한: 1시간 후 재시도')
+            set_status('error', 'YouTube 제한: 1시간 후 재시도 필요')
+        elif '403' in error or 'Forbidden' in error:
+            set_status('error', 'YouTube 접근 거부: 네트워크 변경 또는 나중에 재시도')
+        elif 'unavailable' in error.lower():
+            set_status('error', '동영상 사용 불가: URL 확인 필요')
         else:
-            set_status('error', f'오류: {error[:100]}')
+            set_status('error', f'오류: {error[:150]}')
+        print(f"[ERROR] {error}", flush=True)
 
 
 @app.route('/')
@@ -224,7 +240,7 @@ def download():
     thread = threading.Thread(target=download_task, args=(url,), daemon=True)
     thread.start()
     
-    return jsonify({{'status': 'started'}})
+    return jsonify({'status': 'started'})
 
 
 @app.route('/status')
