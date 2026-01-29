@@ -1,12 +1,9 @@
 # YouTube 음원 다운로더 필수 라이브러리
 # 아래 명령어로 설치하세요:
-# pip3 install -r requirements.txt
+# pip install -r requirements.txt
 
 # YouTube 다운로드 라이브러리 (youtube-dl의 개선 버전)
 yt-dlp>=2024.1.0
-
-# 웹 서버 프레임워크 (웹 버전용)
-flask>=2.3.0
 
 # FFmpeg는 별도 설치 필요 (아래 설치 방법 참고)
 # Windows: https://github.com/BtbN/FFmpeg-Builds/releases 에서 다운로드
