@@ -9,7 +9,7 @@ YouTube 동영상에서 오디오만 추출하여 FLAC 고음질 형식으로 �
 ```bash
 python3 --version
 ```
-Python 3.7 이상이 필요합니다.
+Python 3.12 이상이 필요합니다.
 
 ### 2단계: 필수 라이브러리 설치
 ```bash
