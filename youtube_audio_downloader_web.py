@@ -2,14 +2,16 @@
 YouTube 음원 다운로더 (FLAC 고음질) - 웹 버전
 - 브라우저 기반 GUI (Flask 사용)
 - macOS 호환성 문제 해결
+- 디버그 로그 추가
 """
 
-from flask import Flask, render_template_string, request, jsonify, send_file
+from flask import Flask, render_template_string, request, jsonify
 import yt_dlp
 import os
 from pathlib import Path
 import threading
 import time
+import sys
 
 # Flask 앱 생성
 app = Flask(__name__)
@@ -20,14 +22,45 @@ download_status = {
     'message': 'YouTube URL을 입력하고 다운로드 버튼을 클릭하세요.',
     'progress': 0,
     'filename': '',
-    'filepath': ''
+    'filepath': '',
+    'logs': []  # 로그 메시지 배열
 }
+
+# 상태 업데이트를 위한 락 (thread-safe)
+status_lock = threading.Lock()
 
 # 기본 다운로드 경로
 DOWNLOAD_PATH = str(Path.home() / "Downloads" / "YouTube_Audio")
 os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
-# HTML 템플릿 (파일로 분리하지 않고 하나의 파일에 포함)
+
+def log_message(message):
+    """
+    로그 메시지 추가 (콘솔과 상태에 모두 기록)
+    Args:
+        message: 로그 메시지
+    """
+    print(f"[LOG] {message}", flush=True)  # 콘솔 출력
+    with status_lock:
+        download_status['logs'].append(message)
+        download_status['message'] = message
+
+
+def update_status(status, message):
+    """
+    다운로드 상태 업데이트 (thread-safe)
+    Args:
+        status: 상태 값
+        message: 상태 메시지
+    """
+    with status_lock:
+        download_status['status'] = status
+        download_status['message'] = message
+        download_status['logs'].append(message)
+    print(f"[STATUS] {status}: {message}", flush=True)
+
+
+# HTML 템플릿
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="ko">
@@ -176,6 +209,11 @@ HTML_TEMPLATE = """
             color: #1976d2;
         }
         
+        .status-converting {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
         .status-complete {
             background: #e8f5e9;
             color: #2e7d32;
@@ -266,6 +304,7 @@ HTML_TEMPLATE = """
     
     <script>
         let statusCheckInterval;
+        let lastLogLength = 0;
         
         // 다운로드 시작 함수
         function startDownload() {
@@ -281,11 +320,22 @@ HTML_TEMPLATE = """
                 return;
             }
             
+            // 플레이리스트 URL 경고
+            if (url.includes('list=') || url.includes('start_radio=')) {
+                const confirmMsg = '플레이리스트 URL이 감지되었습니다.\\n' +
+                                  '첫 번째 동영상만 다운로드됩니다.\\n\\n' +
+                                  '계속하시겠습니까?';
+                if (!confirm(confirmMsg)) {
+                    return;
+                }
+            }
+            
             // 버튼 비활성화
             document.getElementById('download-btn').disabled = true;
             document.getElementById('progress-container').style.display = 'block';
             
             // 로그 초기화
+            lastLogLength = 0;
             document.getElementById('log-content').textContent = '다운로드 시작...\\n';
             
             // 서버에 다운로드 요청
@@ -298,6 +348,7 @@ HTML_TEMPLATE = """
             })
             .then(response => response.json())
             .then(data => {
+                console.log('Download started:', data);
                 if (data.status === 'started') {
                     // 상태 체크 시작
                     startStatusCheck();
@@ -320,25 +371,28 @@ HTML_TEMPLATE = """
             fetch('/status')
                 .then(response => response.json())
                 .then(data => {
+                    console.log('Status:', data);
                     updateStatus(data.status, data.message);
                     
-                    // 로그 업데이트
-                    const logElement = document.getElementById('log-content');
-                    if (data.message) {
-                        logElement.textContent += data.message + '\\n';
+                    // 로그 업데이트 (새로운 로그만 추가)
+                    if (data.logs && data.logs.length > lastLogLength) {
+                        const logElement = document.getElementById('log-content');
+                        const newLogs = data.logs.slice(lastLogLength);
+                        newLogs.forEach(log => {
+                            logElement.textContent += log + '\\n';
+                        });
                         logElement.scrollTop = logElement.scrollHeight;
+                        lastLogLength = data.logs.length;
                     }
                     
                     // 완료 또는 에러 시 체크 중지
                     if (data.status === 'complete' || data.status === 'error') {
                         clearInterval(statusCheckInterval);
                         document.getElementById('download-btn').disabled = false;
-                        
-                        if (data.status === 'complete') {
-                            document.getElementById('log-content').textContent += 
-                                '\\n✓ 다운로드 완료!\\n파일명: ' + data.filename + '\\n';
-                        }
                     }
+                })
+                .catch(error => {
+                    console.error('Status check error:', error);
                 });
         }
         
@@ -371,17 +425,18 @@ def progress_hook(d):
     Args:
         d: 다운로드 진행 정보
     """
-    global download_status
-    
-    if d['status'] == 'downloading':
-        download_status['status'] = 'downloading'
-        percent = d.get('_percent_str', 'N/A')
-        speed = d.get('_speed_str', 'N/A')
-        download_status['message'] = f"다운로드 중... {percent} (속도: {speed})"
-        
-    elif d['status'] == 'finished':
-        download_status['status'] = 'converting'
-        download_status['message'] = "다운로드 완료. FLAC 변환 중..."
+    try:
+        if d['status'] == 'downloading':
+            percent = d.get('_percent_str', 'N/A').strip()
+            speed = d.get('_speed_str', 'N/A').strip()
+            message = f"다운로드 중... {percent} (속도: {speed})"
+            update_status('downloading', message)
+            
+        elif d['status'] == 'finished':
+            update_status('converting', "다운로드 완료. FLAC 변환 중...")
+            
+    except Exception as e:
+        print(f"[ERROR] progress_hook: {e}", flush=True)
 
 
 def download_audio(url):
@@ -390,11 +445,20 @@ def download_audio(url):
     Args:
         url: YouTube URL
     """
-    global download_status
-    
     try:
-        download_status['status'] = 'downloading'
-        download_status['message'] = '다운로드 준비 중...'
+        # 플레이리스트 URL 체크 및 정리
+        if 'list=' in url or '&start_radio=' in url:
+            log_message("⚠️ 플레이리스트 URL이 감지되었습니다.")
+            log_message("첫 번째 동영상만 다운로드합니다.")
+            # URL에서 플레이리스트 파라미터 제거
+            if '&list=' in url:
+                url = url.split('&list=')[0]
+            elif '?list=' in url:
+                url = url.split('?list=')[0]
+        
+        log_message("=" * 60)
+        log_message(f"다운로드 URL: {url}")
+        update_status('downloading', '다운로드 준비 중...')
         
         # yt-dlp 옵션 설정
         ydl_opts = {
@@ -405,30 +469,66 @@ def download_audio(url):
                 'preferredcodec': 'flac',
             }],
             'progress_hooks': [progress_hook],
-            'quiet': True,
-            'no_warnings': True,
+            'quiet': False,  # 디버그를 위해 출력 활성화
+            'no_warnings': False,
+            
+            # 플레이리스트 차단 - 단일 동영상만 다운로드
+            'noplaylist': True,  # 플레이리스트 무시
+            'extract_flat': False,  # 전체 정보 추출
+            
+            # Rate Limit 방지
+            'sleep_interval': 1,  # 요청 사이 1초 대기
+            'max_sleep_interval': 3,  # 최대 3초 대기
         }
+        
+        log_message("yt-dlp 초기화 중...")
         
         # 다운로드 실행
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            log_message("동영상 정보 가져오는 중...")
             info = ydl.extract_info(url, download=False)
             video_title = info.get('title', 'Unknown')
             
-            download_status['message'] = f"제목: {video_title}"
-            time.sleep(0.5)
+            log_message(f"제목: {video_title}")
+            log_message("FLAC 고음질로 다운로드 시작...")
             
             # 실제 다운로드
             ydl.download([url])
         
-        # 완료 상태 업데이트
-        download_status['status'] = 'complete'
-        download_status['message'] = '✓ 다운로드 완료!'
-        download_status['filename'] = f"{video_title}.flac"
-        download_status['filepath'] = os.path.join(DOWNLOAD_PATH, f"{video_title}.flac")
+        # 완료
+        filename = f"{video_title}.flac"
+        filepath = os.path.join(DOWNLOAD_PATH, filename)
+        
+        with status_lock:
+            download_status['status'] = 'complete'
+            download_status['message'] = '✓ 다운로드 완료!'
+            download_status['filename'] = filename
+            download_status['filepath'] = filepath
+            download_status['logs'].append('=' * 60)
+            download_status['logs'].append('✓ 다운로드 완료!')
+            download_status['logs'].append(f'파일명: {filename}')
+            download_status['logs'].append(f'저장 위치: {DOWNLOAD_PATH}')
+        
+        log_message(f"완료: {filename}")
         
     except Exception as e:
-        download_status['status'] = 'error'
-        download_status['message'] = f'오류 발생: {str(e)}'
+        error_str = str(e)
+        
+        # Rate Limit 에러 처리
+        if 'rate-limited' in error_str.lower():
+            error_message = "YouTube 접근 제한: 너무 많은 요청으로 인해 일시적으로 차단되었습니다. 1시간 후 다시 시도해주세요."
+        elif 'unavailable' in error_str.lower():
+            error_message = "동영상을 사용할 수 없습니다. URL을 확인하거나 다른 동영상을 시도해주세요."
+        elif 'playlist' in error_str.lower():
+            error_message = "플레이리스트는 지원하지 않습니다. 단일 동영상 URL을 입력해주세요."
+        else:
+            error_message = f"오류 발생: {error_str}"
+        
+        log_message(f"[ERROR] {error_message}")
+        update_status('error', error_message)
+        print(f"[EXCEPTION] {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/')
@@ -445,21 +545,27 @@ def download():
     data = request.get_json()
     url = data.get('url', '')
     
+    print(f"[API] Download request: {url}", flush=True)
+    
     if not url:
         return jsonify({'status': 'error', 'message': 'URL이 필요합니다.'})
     
     # 다운로드 상태 초기화
-    download_status = {
-        'status': 'downloading',
-        'message': '다운로드 시작...',
-        'progress': 0,
-        'filename': '',
-        'filepath': ''
-    }
+    with status_lock:
+        download_status = {
+            'status': 'downloading',
+            'message': '다운로드 시작...',
+            'progress': 0,
+            'filename': '',
+            'filepath': '',
+            'logs': ['다운로드 요청을 받았습니다.']
+        }
     
     # 백그라운드 스레드에서 다운로드 실행
     thread = threading.Thread(target=download_audio, args=(url,), daemon=True)
     thread.start()
+    
+    print("[API] Download thread started", flush=True)
     
     return jsonify({'status': 'started', 'message': '다운로드가 시작되었습니다.'})
 
@@ -467,13 +573,15 @@ def download():
 @app.route('/status')
 def status():
     """다운로드 상태 확인 API"""
-    return jsonify(download_status)
+    with status_lock:
+        status_copy = download_status.copy()
+    return jsonify(status_copy)
 
 
 @app.route('/favicon.ico')
 def favicon():
     """favicon 요청 처리 (404 오류 방지)"""
-    return '', 204  # No Content
+    return '', 204
 
 
 def main():
@@ -487,13 +595,15 @@ def main():
     print("\n  👉 http://127.0.0.1:5000\n")
     print("종료하려면 Ctrl+C를 누르세요.")
     print("=" * 60)
+    print("\n[DEBUG MODE] 상세 로그가 출력됩니다.\n")
+    sys.stdout.flush()
     
     # 브라우저 자동 실행
     import webbrowser
     threading.Timer(1.5, lambda: webbrowser.open('http://127.0.0.1:5000')).start()
     
     # Flask 서버 실행
-    app.run(debug=False, port=5000)
+    app.run(debug=False, port=5000, threaded=True)
 
 
 if __name__ == "__main__":
