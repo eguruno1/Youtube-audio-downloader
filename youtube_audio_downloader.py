@@ -4,10 +4,19 @@ YouTube 음원 다운로더 (FLAC 고음질)
 - GUI 기반 프로그램 (Tkinter 사용)
 """
 
+# =========================================================
+# macOS 26 버전 오인식 문제 해결용 re-exec 처리 (중요)
+# =========================================================
+import os
+import sys
+
+if sys.platform == "darwin" and os.environ.get("SYSTEM_VERSION_COMPAT") != "0":
+    os.environ["SYSTEM_VERSION_COMPAT"] = "0"
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+    
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-import os
 from pathlib import Path
 import yt_dlp
 
