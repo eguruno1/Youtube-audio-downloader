@@ -59,9 +59,9 @@ python youtube_audio_downloader.py
 5. 다운로드 완료 대기
 
 ## 📁 기본 다운로드 위치
-`C:\Users\사용자명\Downloads\YouTube_Audio` (Windows)
-`/Users/사용자명/Downloads/YouTube_Audio` (macOS)
-`/home/사용자명/Downloads/YouTube_Audio` (Linux)
+- Windows : `C:\Users\사용자명\Downloads\YouTube_Audio` 
+- macOS : `/Users/사용자명/Downloads/YouTube_Audio` 
+- Linux : `/home/사용자명/Downloads/YouTube_Audio` 
 
 ## 🎵 출력 형식
 - 파일 형식: FLAC (Free Lossless Audio Codec)
