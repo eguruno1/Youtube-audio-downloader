@@ -1,0 +1,16 @@
+# YouTube 음원 다운로더 필수 라이브러리 - 최종 버전
+
+# 웹 서버 프레임워크
+flask>=2.3.0
+
+# yt-dlp (브라우저 쿠키 방식 - 최종 해결책)
+yt-dlp>=2025.10.14
+
+# FFmpeg는 별도 설치 필요
+# Mac: brew install ffmpeg (이미 설치되어 있음)
+# Windows: https://github.com/BtbN/FFmpeg-Builds/releases
+# Linux: sudo apt-get install ffmpeg
+
+# 선택사항: PyTube (백업용, 현재 작동 안함)
+# pytube>=15.0.0
+# pydub>=0.25.1
