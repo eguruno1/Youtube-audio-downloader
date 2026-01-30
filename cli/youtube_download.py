@@ -25,24 +25,72 @@ def download_audio(url):
     print(f"\n📁 저장 위치: {DOWNLOAD_PATH}")
     print(f"🔗 URL: {url}\n")
     
+    # yt-dlp 경로 찾기 (여러 방법 시도)
+    ytdlp_cmd = None
+    
+    # 방법 1: 직접 명령어
+    try:
+        subprocess.run(['yt-dlp', '--version'], capture_output=True, check=True)
+        ytdlp_cmd = 'yt-dlp'
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    
+    # 방법 2: Python 모듈로 실행
+    if ytdlp_cmd is None:
+        try:
+            subprocess.run([sys.executable, '-m', 'yt_dlp', '--version'], 
+                         capture_output=True, check=True)
+            ytdlp_cmd = [sys.executable, '-m', 'yt_dlp']
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+    
+    # 방법 3: 사용자 경로에서 찾기
+    if ytdlp_cmd is None:
+        user_bin = str(Path.home() / 'Library/Python/3.9/bin/yt-dlp')
+        if os.path.exists(user_bin):
+            ytdlp_cmd = user_bin
+    
+    if ytdlp_cmd is None:
+        print("\n" + "=" * 70)
+        print("❌ yt-dlp를 찾을 수 없습니다")
+        print("=" * 70)
+        print("\n📦 해결 방법:")
+        print("   export PATH=\"$HOME/Library/Python/3.9/bin:$PATH\"")
+        print("   또는")
+        print("   python3 -m pip install --user yt-dlp")
+        print("\n터미널을 재시작한 후 다시 시도하세요.\n")
+        return False
+    
     # yt-dlp 명령어 구성
-    command = [
-        'yt-dlp',
-        '--extract-audio',                    # 오디오만 추출
-        '--audio-format', 'flac',             # FLAC 형식
-        '--audio-quality', '0',               # 최고 품질
-        '--output', f'{DOWNLOAD_PATH}/%(title)s.%(ext)s',  # 저장 경로
-        '--no-playlist',                      # 플레이리스트 무시
-        '--progress',                         # 진행률 표시
-        '--cookies-from-browser', 'chrome',   # Chrome 쿠키 사용
-        url
-    ]
+    if isinstance(ytdlp_cmd, list):
+        command = ytdlp_cmd + [
+            '--extract-audio',
+            '--audio-format', 'flac',
+            '--audio-quality', '0',
+            '--output', f'{DOWNLOAD_PATH}/%(title)s.%(ext)s',
+            '--no-playlist',
+            '--progress',
+            '--cookies-from-browser', 'chrome',
+            url
+        ]
+    else:
+        command = [
+            ytdlp_cmd,
+            '--extract-audio',
+            '--audio-format', 'flac',
+            '--audio-quality', '0',
+            '--output', f'{DOWNLOAD_PATH}/%(title)s.%(ext)s',
+            '--no-playlist',
+            '--progress',
+            '--cookies-from-browser', 'chrome',
+            url
+        ]
     
     print("🚀 다운로드 시작...\n")
     
     try:
         # yt-dlp 실행
-        result = subprocess.run(command, check=True, text=True, capture_output=False)
+        result = subprocess.run(command, check=True, text=True)
         
         print("\n" + "=" * 70)
         print("✅ 다운로드 완료!")
@@ -60,16 +108,7 @@ def download_audio(url):
         print("2. YouTube 동영상을 재생해보세요")
         print("3. 다시 시도하세요")
         print("\n또는 Safari 사용:")
-        print(f"   yt-dlp --cookies-from-browser safari {url}")
-        print()
-        return False
-        
-    except FileNotFoundError:
-        print("\n" + "=" * 70)
-        print("❌ yt-dlp가 설치되지 않았습니다")
-        print("=" * 70)
-        print("\n📦 설치 방법:")
-        print("   pip3 install yt-dlp")
+        print(f"   python3 -m yt_dlp --cookies-from-browser safari {url}")
         print()
         return False
 
